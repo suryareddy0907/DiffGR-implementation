@@ -7,7 +7,7 @@ Implements the 4 modules shown in Figure 1b:
    - User merger: concatenates emb_u, emb_{G^t}, and sinusoidal time embedding emb_t.
    - Item merger: transforms item embeddings Emb_I to Emb_{final_I}.
 4. Edge Predictor:
-   - Computes Hadamard product emb_{final_u} * Emb_{final_I}.
+   - Computes edge probabilities via Hadamard product / bilinear edge projection.
    - Predicts 2-class logits for each edge (0: no edge, 1: edge exists).
 """
 
@@ -51,9 +51,10 @@ class DiffGRModel(nn.Module):
         self.encoder = nn.Sequential(
             nn.Linear(n_items, hidden_dim),
             nn.LayerNorm(hidden_dim),
-            nn.LeakyReLU(0.2),
+            nn.SiLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, emb_dim)
+            nn.Linear(hidden_dim, emb_dim),
+            nn.LayerNorm(emb_dim)
         )
 
         # 3. Time Step Embedding
@@ -63,26 +64,28 @@ class DiffGRModel(nn.Module):
         self.user_merger = nn.Sequential(
             nn.Linear(emb_dim * 3, hidden_dim),
             nn.LayerNorm(hidden_dim),
-            nn.LeakyReLU(0.2),
+            nn.SiLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, emb_dim)
+            nn.Linear(hidden_dim, emb_dim),
+            nn.LayerNorm(emb_dim)
         )
 
         # 5. Item Embedding Merger: transforms Emb_I -> Emb_final_I
         self.item_merger = nn.Sequential(
             nn.Linear(emb_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
-            nn.LeakyReLU(0.2),
+            nn.SiLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, emb_dim)
+            nn.Linear(hidden_dim, emb_dim),
+            nn.LayerNorm(emb_dim)
         )
 
-        # 6. Edge Predictor: predicts edge existence logits [class 0, class 1]
-        self.edge_predictor = nn.Sequential(
-            nn.Linear(emb_dim, hidden_dim // 2),
-            nn.LeakyReLU(0.2),
-            nn.Linear(hidden_dim // 2, 2)
-        )
+        # 6. Edge Predictor parameters for class 0 (no edge) and class 1 (edge exists)
+        # Using Hadamard product (emb_u * w) @ emb_i.T + bias
+        self.w_pos = nn.Parameter(torch.ones(emb_dim))
+        self.w_neg = nn.Parameter(-torch.ones(emb_dim))
+        self.bias_pos = nn.Parameter(torch.zeros(1))
+        self.bias_neg = nn.Parameter(torch.zeros(1))
 
         self._init_weights()
 
@@ -93,7 +96,9 @@ class DiffGRModel(nn.Module):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Embedding):
-                nn.init.normal_(m.weight, std=0.01)
+                nn.init.normal_(m.weight, std=0.02)
+        nn.init.normal_(self.w_pos, mean=1.0, std=0.02)
+        nn.init.normal_(self.w_neg, mean=-1.0, std=0.02)
 
     def forward(self, u_ids, gt, t):
         """
@@ -120,29 +125,37 @@ class DiffGRModel(nn.Module):
         emb_i = self.item_embeddings(all_item_ids)            # [n_items, emb_dim]
         emb_final_i = self.item_merger(emb_i)                 # [n_items, emb_dim]
 
-        # Module 5: Hadamard product between emb_final_u and emb_final_i
-        # Broadcast: [batch_size, 1, emb_dim] * [1, n_items, emb_dim] -> [batch_size, n_items, emb_dim]
-        emb_e = emb_final_u.unsqueeze(1) * emb_final_i.unsqueeze(0)
+        # Module 5 & 6: Fast Hadamard + Linear edge prediction
+        # (emb_final_u * w) @ emb_final_i.T
+        logits_neg = torch.matmul(emb_final_u * self.w_neg, emb_final_i.T) + self.bias_neg
+        logits_pos = torch.matmul(emb_final_u * self.w_pos, emb_final_i.T) + self.bias_pos
 
-        # Module 6: Edge prediction
-        logits = self.edge_predictor(emb_e)  # [batch_size, n_items, 2]
+        logits = torch.stack([logits_neg, logits_pos], dim=-1)  # [batch_size, n_items, 2]
         return logits
 
     @torch.no_grad()
-    def predict_scores(self, u_ids, gt=None):
+    def predict_scores(self, u_ids, diffusion=None, train_dict=None):
         """
-        Compute recommendation scores at inference (t = 0).
-        Paper Eq. 7: score_i = e_hat^0_{i,1} - e_hat^0_{i,0}
+        Compute recommendation scores matching Eq. 7 of DiffGR paper:
+        score_i = e^0_{i,1} - e^0_{i,0}
         """
         self.eval()
         batch_size = u_ids.size(0)
         device = u_ids.device
-        if gt is None:
-            # Corrupted / empty graph at T
-            gt = torch.zeros(batch_size, self.n_items, device=device)
-        t = torch.zeros(batch_size, dtype=torch.long, device=device)
 
-        logits = self.forward(u_ids, gt, t)  # [batch_size, n_items, 2]
-        probs = F.softmax(logits, dim=-1)     # [batch_size, n_items, 2]
-        scores = probs[..., 1] - probs[..., 0] # Eq. 7
+        # Feed the user's historical training interactions
+        gt = torch.zeros(batch_size, self.n_items, device=device)
+        if train_dict is not None:
+            for i, uid in enumerate(u_ids.cpu().tolist()):
+                items = train_dict.get(uid, [])
+                if len(items) > 0:
+                    gt[i, items] = 1.0
+
+        # Predict clean graph G^0 at t=1 (denoising to t=0)
+        t = torch.ones(batch_size, dtype=torch.long, device=device)
+        logits = self.forward(u_ids, gt, t)
+        probs = F.softmax(logits, dim=-1)
+
+        # Eq. 7: score_i = e^0_{i,1} - e^0_{i,0}
+        scores = probs[..., 1] - probs[..., 0]
         return scores

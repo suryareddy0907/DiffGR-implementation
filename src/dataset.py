@@ -69,7 +69,7 @@ class DataLoaderHandler:
                 for line in f:
                     parts = line.strip().split('::')
                     if len(parts) >= 2:
-                        interactions.append((parts[0], parts[1]))
+                        interactions.append((int(parts[0]), int(parts[1])))
 
         elif self.dataset_name in ['pinterest', 'pinterest-20']:
             # Load Pinterest train & test rating files
