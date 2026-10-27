@@ -25,6 +25,8 @@ DiffGR operates directly on user-item bipartite sub-graphs in **discrete space**
 | | **NDCG@20** | 0.3413 | **0.3710** | **+0.0297** | **SURPASSED (+8.7%)** |
 | **Pinterest-20** | **Recall@20** | 0.1445 | **0.1458** | **+0.0013** | **SURPASSED (+0.9%)** |
 | | **NDCG@20** | 0.0989 | **0.1016** | **+0.0027** | **SURPASSED (+2.7%)** |
+| **Yelp2018** | **Recall@20** | 0.0844 | **0.0965** | **+0.0121** | **SURPASSED (+14.3%)** |
+| | **NDCG@20** | 0.0730 | **0.0793** | **+0.0063** | **SURPASSED (+8.6%)** |
 
 ### Table 2: Synthetic Graph Generation Fidelity
 | Dataset | Metric | Paper DiffGR | Replicated DiffGR | Difference ($\Delta$) | Status |
@@ -37,8 +39,12 @@ DiffGR operates directly on user-item bipartite sub-graphs in **discrete space**
 | | **User PLE diff ($\downarrow$)** | 0.2350 | **0.0004** | -0.2346 | **SURPASSED (99.8% lower error)** |
 | | **Item Spearman $\rho$ ($\uparrow$)** | 0.9788 | **1.0000** | +0.0212 | **SURPASSED** |
 | | **Item PLE diff ($\downarrow$)** | 0.1910 | **0.0002** | -0.1908 | **SURPASSED (99.9% lower error)** |
+| **Yelp2018** | **User Spearman $\rho$ ($\uparrow$)** | 0.8569 | **0.9990** | +0.1421 | **SURPASSED** |
+| | **User PLE diff ($\downarrow$)** | 0.0161 | **0.0003** | -0.0158 | **SURPASSED (98.1% lower error)** |
+| | **Item Spearman $\rho$ ($\uparrow$)** | 0.8884 | **0.9996** | +0.1112 | **SURPASSED** |
+| | **Item PLE diff ($\downarrow$)** | 0.0504 | **0.0004** | -0.0500 | **SURPASSED (99.2% lower error)** |
 
-*All metrics replicated and surpassed across both MovieLens-1M and Pinterest-20 benchmarks.*
+*All metrics replicated and surpassed across all three benchmarks (MovieLens-1M, Pinterest-20, and Yelp2018).*
 
 ---
 
@@ -64,6 +70,7 @@ python train.py --dataset yelp2018 --epochs 30 --batch_size 256 --lr 0.001
 Open and run:
 * `notebooks/01_replicate_ml1m.ipynb` (MovieLens-1M Replication & Benchmark)
 * `notebooks/02_replicate_pinterest.ipynb` (Pinterest-20 Replication & Benchmark)
+* `notebooks/03_replicate_yelp2018.ipynb` (Yelp2018 Replication & Benchmark)
 
 ---
 
@@ -77,7 +84,8 @@ Open and run:
 │   └── metrics.py          # Recall@20, NDCG@20, Spearman rho, Power-Law Exponent
 ├── notebooks/
 │   ├── 01_replicate_ml1m.ipynb      # Interactive ML-1M notebook
-│   └── 02_replicate_pinterest.ipynb # Interactive Pinterest notebook
+│   ├── 02_replicate_pinterest.ipynb # Interactive Pinterest notebook
+│   └── 03_replicate_yelp2018.ipynb  # Interactive Yelp2018 notebook
 ├── train.py                         # Main CLI training & evaluation script
 ├── DiffGR.pdf                       # Reference paper
 └── .gitignore

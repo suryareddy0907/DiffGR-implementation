@@ -49,7 +49,11 @@ def main():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--eval_interval', type=int, default=5)
+    parser.add_argument('--beta', type=float, default=None, help="Bipartite graph propagation weight beta")
     args = parser.parse_args()
+
+    if args.beta is None:
+        args.beta = 1.20 if args.dataset in ['pinterest', 'yelp2018'] else 0.0
 
     set_seed(args.seed)
     print("=" * 60)
@@ -107,7 +111,7 @@ def main():
 
         # Evaluation
         if epoch % args.eval_interval == 0 or epoch == args.epochs:
-            val_recall, val_ndcg = evaluate_model(model, data_handler, diffusion=diffusion, split='val', k=20, device=args.device)
+            val_recall, val_ndcg = evaluate_model(model, data_handler, diffusion=diffusion, split='val', k=20, beta=args.beta, device=args.device)
             print(f"Epoch [{epoch:03d}/{args.epochs:03d}] Loss: {avg_loss:.4f} | Val R@20: {val_recall:.4f} | Val N@20: {val_ndcg:.4f}")
 
             if val_ndcg > best_val_ndcg:
@@ -126,7 +130,7 @@ def main():
         print(f"Loaded best checkpoint from epoch {best_epoch} (Val N@20 = {best_val_ndcg:.4f})")
 
     print("\nRunning Final Test Evaluation (K=20)...")
-    test_recall, test_ndcg = evaluate_model(model, data_handler, diffusion=diffusion, split='test', k=20, device=args.device)
+    test_recall, test_ndcg = evaluate_model(model, data_handler, diffusion=diffusion, split='test', k=20, beta=args.beta, device=args.device)
 
     print("=" * 60)
     print(f"RESULTS FOR {args.dataset.upper()} (Top-20):")
