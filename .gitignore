@@ -1,0 +1,16 @@
+# Python cache & environments
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+venv/
+env/
+
+# Large / raw archive files
+Data
+
+# Training outputs & checkpoints
+checkpoints/
+runs/
+*.pth
+*.pt
