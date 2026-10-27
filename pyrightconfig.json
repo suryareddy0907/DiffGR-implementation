@@ -1,0 +1,14 @@
+{
+  "include": [
+    "src",
+    "train.py",
+    "notebooks"
+  ],
+  "extraPaths": [
+    ".",
+    "src",
+    "C:/Users/PSuryanarayana Reddy/AppData/Local/Programs/Python/Python38/lib/site-packages"
+  ],
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": "none"
+}
