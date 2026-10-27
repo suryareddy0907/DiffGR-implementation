@@ -37,7 +37,7 @@ class SinusoidalTimeEmbedding(nn.Module):
 
 
 class DiffGRModel(nn.Module):
-    def __init__(self, n_users, n_items, emb_dim=64, hidden_dim=256, dropout=0.1):
+    def __init__(self, n_users, n_items, emb_dim=64, hidden_dim=256, dropout=0.1, linear_item_merger=False):
         super().__init__()
         self.n_users = n_users
         self.n_items = n_items
@@ -71,14 +71,20 @@ class DiffGRModel(nn.Module):
         )
 
         # 5. Item Embedding Merger: transforms Emb_I -> Emb_final_I
-        self.item_merger = nn.Sequential(
-            nn.Linear(emb_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.SiLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, emb_dim),
-            nn.LayerNorm(emb_dim)
-        )
+        if linear_item_merger:
+            self.item_merger = nn.Sequential(
+                nn.Linear(emb_dim, emb_dim),
+                nn.LayerNorm(emb_dim)
+            )
+        else:
+            self.item_merger = nn.Sequential(
+                nn.Linear(emb_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.SiLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, emb_dim),
+                nn.LayerNorm(emb_dim)
+            )
 
         # 6. Edge Predictor parameters for class 0 (no edge) and class 1 (edge exists)
         # Using Hadamard product (emb_u * w) @ emb_i.T + bias
@@ -99,6 +105,29 @@ class DiffGRModel(nn.Module):
                 nn.init.normal_(m.weight, std=0.02)
         nn.init.normal_(self.w_pos, mean=1.0, std=0.02)
         nn.init.normal_(self.w_neg, mean=-1.0, std=0.02)
+
+    def load_state_dict(self, state_dict, strict=True):
+        # Auto-adapt item_merger architecture based on checkpoint weights
+        if "item_merger.0.weight" in state_dict and "item_merger.4.weight" not in state_dict:
+            ckpt_shape = state_dict["item_merger.0.weight"].shape
+            if ckpt_shape == (self.emb_dim, self.emb_dim):
+                device = self.user_embeddings.weight.device
+                self.item_merger = nn.Sequential(
+                    nn.Linear(self.emb_dim, self.emb_dim),
+                    nn.LayerNorm(self.emb_dim)
+                ).to(device)
+        elif "item_merger.4.weight" in state_dict and len(self.item_merger) == 2:
+            hidden_dim = state_dict["item_merger.0.weight"].shape[0]
+            device = self.user_embeddings.weight.device
+            self.item_merger = nn.Sequential(
+                nn.Linear(self.emb_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.SiLU(),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_dim, self.emb_dim),
+                nn.LayerNorm(self.emb_dim)
+            ).to(device)
+        return super().load_state_dict(state_dict, strict=strict)
 
     def forward(self, u_ids, gt, t):
         """
@@ -151,8 +180,9 @@ class DiffGRModel(nn.Module):
                 if len(items) > 0:
                     gt[i, items] = 1.0
 
-        # Predict clean graph G^0 at t=1 (denoising to t=0)
-        t = torch.ones(batch_size, dtype=torch.long, device=device)
+        # Section 2.2: Denoise from time step t=T (or t=steps)
+        step_val = 5 if diffusion is None else getattr(diffusion, 'steps', 5)
+        t = torch.full((batch_size,), step_val, dtype=torch.long, device=device)
         logits = self.forward(u_ids, gt, t)
         probs = F.softmax(logits, dim=-1)
 

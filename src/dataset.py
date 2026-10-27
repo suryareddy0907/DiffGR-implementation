@@ -72,14 +72,14 @@ class DataLoaderHandler:
                         interactions.append((int(parts[0]), int(parts[1])))
 
         elif self.dataset_name in ['pinterest', 'pinterest-20']:
-            # Load Pinterest train & test rating files
+            # Load Pinterest train & test rating files: user \t item \t rating \t time
             for fname in ['pinterest-20.train.rating', 'pinterest-20.test.rating']:
                 path = os.path.join(self.data_dir, 'Pinterest', fname)
                 with open(path, 'r', encoding='utf-8') as f:
                     for line in f:
                         parts = line.strip().split('\t')
                         if len(parts) >= 2:
-                            interactions.append((parts[0], parts[1]))
+                            interactions.append((int(parts[0]), int(parts[1])))
 
         elif self.dataset_name in ['yelp', 'yelp2018']:
             # Load Yelp2018 train.txt and test.txt (NGCF format: user_id item_id1 item_id2 ...)
@@ -89,9 +89,9 @@ class DataLoaderHandler:
                     for line in f:
                         parts = line.strip().split()
                         if len(parts) > 1:
-                            u = parts[0]
+                            u = int(parts[0])
                             for item in parts[1:]:
-                                interactions.append((u, item))
+                                interactions.append((u, int(item)))
         else:
             raise ValueError(f"Unknown dataset: {self.dataset_name}")
 

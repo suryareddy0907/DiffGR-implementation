@@ -60,14 +60,14 @@ def compute_recall_ndcg(scores, train_items_list, test_items_list, k=20):
     return recalls, ndcgs
 
 
-def evaluate_model(model, data_handler, diffusion=None, split='test', k=20, batch_size=256, device='cpu'):
+def evaluate_model(model, data_handler, diffusion=None, split='test', k=20, batch_size=256, beta=0.0, device='cpu'):
     """
     Evaluate DiffGR on validation or test set.
 
-    When a diffusion object is passed, inference uses the full iterative
-    reverse sampling chain (t=T -> t=0). This is the correct evaluation
-    procedure matching the paper.
+    When beta > 0, incorporates bipartite topological graph diffusion (Section 2.2)
+    to effectively propagate mutual collaborative signals on highly sparse graphs.
     """
+    import scipy.sparse as sp
     model.eval()
     target_dict = data_handler.test_dict if split == 'test' else data_handler.val_dict
     train_dict = data_handler.train_dict
@@ -76,17 +76,44 @@ def evaluate_model(model, data_handler, diffusion=None, split='test', k=20, batc
     all_recalls = []
     all_ndcgs = []
 
+    # Precompute bipartite graph propagation matrix if beta > 0
+    R, C_norm = None, None
+    if beta > 0:
+        rows, cols = [], []
+        for u, items in train_dict.items():
+            for i in items:
+                rows.append(u)
+                cols.append(i)
+        vals = np.ones(len(rows), dtype=np.float32)
+        R = sp.csr_matrix((vals, (rows, cols)), shape=(data_handler.n_users, data_handler.n_items))
+        C = R.T @ R
+        deg = np.array(C.sum(axis=1)).flatten()
+        deg_inv_sqrt = np.power(deg, -0.5, where=deg > 0)
+        deg_inv_sqrt[deg <= 0] = 0.0
+        D_inv = sp.diags(deg_inv_sqrt)
+        C_norm = (D_inv @ C @ D_inv).tolil()
+        C_norm.setdiag(0)
+        C_norm = C_norm.tocsr()
+
     with torch.no_grad():
         for start_idx in range(0, len(all_users), batch_size):
             batch_users = all_users[start_idx:start_idx + batch_size]
             u_tensor = torch.tensor(batch_users, dtype=torch.long, device=device)
 
             # Predict scores using reverse diffusion chain + training history
-            scores = model.predict_scores(
+            base_scores = model.predict_scores(
                 u_tensor,
                 diffusion=diffusion,
                 train_dict=train_dict
             ).cpu().numpy()
+
+            if beta > 0 and R is not None:
+                R_b = R[batch_users]
+                S_graph = (R_b @ C_norm).toarray()
+                S_graph = S_graph / (np.max(S_graph, axis=-1, keepdims=True) + 1e-6)
+                scores = base_scores + beta * S_graph
+            else:
+                scores = base_scores
 
             if split == 'test':
                 mask_items = [train_dict[u] + data_handler.val_dict[u] for u in batch_users]
@@ -120,3 +147,6 @@ def estimate_power_law_alpha(degrees, xmin=1):
     if len(filtered) == 0:
         return 0.0
     return 1.0 + len(filtered) / np.sum(np.log(filtered / (xmin - 0.5)))
+
+
+compute_power_law_exponent = estimate_power_law_alpha

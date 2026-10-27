@@ -1,0 +1,445 @@
+
+--- PAGE 1 ---
+DiﬀGR: A Discrete Diﬀusion-Based Model
+for Personalised Recommendation
+by Reconstructing User-Item Bipartite
+Graphs
+Zheng Ju(B)
+, Honghui Du
+, Elias Tragos
+, Neil Hurley
+,
+and Aonghus Lawlor
+Insight Centre for Data Analytics, University College Dublin, Dublin, Ireland
+{zheng.ju,honghui.du,elias.tragos,neil.hurley,
+aonghus.lawlor}@insight-centre.org
+Abstract. Generative models have recently been used to produce per-
+sonalized recommendations by simulating user preferences in continuous
+space. However, existing work often overlooks crucial discrete structural
+relationships, such as graph sparsity and user-item topology, reducing
+recommendation accuracy. Current graph diﬀusion models that manipu-
+late the full adjacency matrix in continuous space face scalability issues
+and poorly structured intermediates adjacency matrix. To address these
+problems, we develop DiﬀGR, a novel discrete diﬀusion model for person-
+alised recommendation. DiﬀGR operates in discrete space, manipulating
+individual user-item bipartite sub-graphs by randomly removing edges
+in forward diﬀusion and restoring them based on a Bernoulli distribution
+in reverse, preserving graph structure and avoiding full adjacency matrix
+loading. Empirical studies show that DiﬀGR achieves competitive per-
+sonalised recommendation results and generates synthetic graphs with
+high ﬁdelity to the original dataset, suggesting a promising direction for
+discrete diﬀusion modelling in recommender systems.
+Keywords: Recommender Systems · Diﬀusion Models · Graph
+Generation
+1
+Introduction
+Generative models including Generative Adversarial Networks (GANs) [20] and
+Variational Auto-Encoders (VAEs) [13] have demonstrated eﬀectiveness in rec-
+ommender systems (RSs) [21]. Generative recommenders are trained to predict
+the likelihood of user interactions with items they have not engaged with by
+learning the underlying generative process [20]. Recently, diﬀusion models (DMs)
+have gained more attention as state-of-the-art generative models in RS [21].
+Limited research has explored the usage of DMs in RS. DMs [11,12,19,21]
+create personalised recommendations by gradually injecting noise into user pro-
+ﬁles to simulate changes in interest and then eliminating the noise to align the
+new interests with the original preferences. However, current DMs in RS face
+c
+⃝The Author(s), under exclusive license to Springer Nature Switzerland AG 2025
+C. Hauﬀet al. (Eds.): ECIR 2025, LNCS 15574, pp. 246–254, 2025.
+https://doi.org/10.1007/978-3-031-88714-7_23
+
+--- PAGE 2 ---
+DiﬀGR: A Discrete Diﬀusion-Based Model for Personalised Recommendation
+247
+Fig. 1. Overview of DiﬀGR: (a) edges in the user-item subgraphs are gradually removed
+and then restored; (b) the denoising model reconstructs the original graph through edge
+predictions.
+signiﬁcant limitations, often overlook the complex user-item relationships by
+operating solely in continuous space (e.g., latent representations) [23].
+Most RS data possesses an inherently graphical structure [23,24]. Framing
+recommendation as a graph-based task eﬀectively captures and uses the struc-
+tural information that encompasses complex relationships between users and
+items within datasets [4]. Existing DMs [2,15,18] used for graph reconstruction
+often require the full adjacency matrix or extensive node and edge features,
+rendering them impractical for large-scale datasets commonly used in RSs.
+To overcome these limitations, we propose DiﬀGR, the ﬁrst diﬀusion-based
+recommender that operates the diﬀusion process directly on RS graphs in dis-
+crete space. DiﬀGR models the interactions of each user with items as a bipartite
+sub-graph, avoiding the computational need for the full adjacency matrix. Dur-
+ing forward diﬀusion, edges are randomly removed in each sub-graph, and in the
+reverse process, they are restored following the Bernoulli distribution. By directly
+manipulating the graph in discrete space, DiﬀGR preserves the graph’s structure,
+making it well-suited to large RS datasets. We conduct extensive experiments on
+three widely used datasets, comparing DiﬀGR with multiple competitive base-
+lines. DiﬀGR achieves superior performance in personalized recommendation,
+demonstrating an eﬀective use of discrete diﬀusion models in RSs. Its ability
+to generate high-ﬁdelity synthetic graphs makes it a powerful tool for future
+research on generative RS models.
+2
+Discrete Diﬀusion
+To preserve graph topology and capture user-item structural relationships, Dif-
+fGR is inspired by [2] and leverages the generation ability of diﬀusion models in
+discrete space for better personalised recommendations. Figure 1a illustrates the
+diﬀusion process of DiﬀGR. Each user’s item interactions form a bipartite sub-
+graph. The forward process randomly removes edges using Bernoulli noise until
+the graph is empty, while the reverse incrementally reconstructs it in discrete
+
+--- PAGE 3 ---
+248
+Z. Ju et al.
+space via a customized edge prediction model that follows a Bernoulli distri-
+bution. Output probabilities from this model are used to rank and recommend
+unseen items to users.
+2.1
+Discrete Forward and Reverse Process
+Given a user-item bipartite sub-graph G = (V, E), where V = {vi}n
+i=1 and E =
+{ei}m
+i=1 are the node set and edge set, respectively. G0 denotes the original sub-
+graph at time step t = 0. The diﬀusion process gradually corrupts G0 to an
+empty graph in T steps. The one-step diﬀusion transition probability q(Gt|Gt−1)
+from Gt−1 to Gt can be formalized as:
+q(Gt|Gt−1) =
+m
+i=1 B(et
+i; (1 −βt)et−1
+i
+)
+(1)
+where B(e; μ) represents the independent Bernoulli distribution where e = 1
+with probability μ and e = 0 with probability 1 −μ; βt is the diﬀusion rate that
+determines the probability of et−1
+i
+being removed from Gt. Since these distribu-
+tions form a Markov chain, the transition probability of any Gt given G0 can be
+represented as:
+q(Gt|G0) =
+m
+i=1 B(et
+i; ¯αte0
+i ).
+(2)
+where cumulative diﬀusion rates αt = 1 −βt and ¯αt = t
+t′=1 αt′.
+Due to the discrete nature of graphs, they are highly sensitive to added noise.
+A linear noise scheduler can quickly distort the graph in the early steps, making
+it diﬃcult for the denoising model to learn the sampled distribution. To address
+this issue, a cosine noise scheduler is employed with a minor modiﬁcation that
+what was previously √¯αt in continuous diﬀusion [14] becomes ¯αt in discrete
+diﬀusion as suggested in [9]. This scheduler smoothly samples a small amount
+of noise in the early steps and follows a linear pattern in the middle stage. The
+cumulative diﬀusion rates ¯αt are no longer obtained from the predeﬁned noise
+rate βt but directly deﬁned using:
+¯αt = f(t)
+f(0)
+f(t) = cos
+t/T + s
+1 + s
+· π
+2
+
+(3)
+where s is a tunable hyper-parameter controlling the noise smoothness added to
+G0 in early steps. βt is now noted as βt = 1 −
+¯αt
+¯αt−1 . Importance sampling is used
+to sample t for variance reduction. In the reverse process, a denoising model θ
+is trained to approximate pθ(Gt−1|Gt) to the posterior of the forward diﬀusion
+process:
+q(Gt−1|Gt, G0) =
+m
+i=1 B
+
+et−1
+i
+; (1 −βt)et−1
+i
+· ¯αt−1e0
+i
+¯αte0
+i
+
+(4)
+Due to the large number of independent Bernoulli variables for potential
+edges in a user-item bipartite sub-graph, directly predicting noise in discrete
+
+--- PAGE 4 ---
+DiﬀGR: A Discrete Diﬀusion-Based Model for Personalised Recommendation
+249
+space is challenging. DiﬀGR predicts a probability vector for each edge ˆe0
+i from
+the given et
+i and then obtains pθ(Gt−1|Gt) by calculating the posterior equation
+m
+i=1 q(et−1
+i
+|et
+i, ˆe0
+i ). The clean graph G0 is approximated by the denoising network
+ˆ
+G0 = θ(Gt, t). The denoising model θ is optimised by maximising the ELBO [8]
+of the clean user-item bipartite sub-graph G0:
+log p(G0) = Eq(G1:T |G0)
+
+log pθ(G0:T )
+q(G1:T |G0)
+	
+≥Eq(G1|G0)[log pθ(G0|G1)]
+
+
+
+reconstruction term Lrec
+−DKL(q(GT |G0 || p(GT ))
+
+
+
+prior matching term
+−
+T
+t=2 Eq(Gt|G0)[DKL(q(Gt−1|Gt, G0) || pθ(Gt−1|Gt))]
+
+
+
+edge prediction term Ledge
+(5)
+where DKL represents the KL-Divergence; DKL in Ledge can be calculated as
+DKL(q(Gt−1|Gt, G0) || q(Gt−1|Gt, ˆG0)), since DiﬀGR parametrizes pθ(Gt−1|Gt)
+using the approximation ˆ
+G0 and the posterior equation of q [9]. The prior match-
+ing term is eliminated during the training process as it is a constant. The recon-
+struction term Lrec can be computed as:
+Lrec =
+m
+i=1 e0
+i,b log ˆe0
+i,b,
+b ∈{0, 1}
+(6)
+2.2
+Personalised Recommendation and Graph Generation
+Our denoising model has four modules (Fig. 1b), reconstructing the edges
+through its approximation ˆG0 given the noise input Gt. An encoder ﬁrst learns the
+latent representation embGt of Gt. As the diﬀusion works on individual user-item
+sub-graphs, mutual information across sub-graphs is hard to capture. To counter
+this, we use an ID embedding module projecting node IDs into embeddings (e.g.,
+EmbU and EmbI for user and item nodes respectively). For a sub-graph G,
+the user embedding merger concatenates embu, embGt and time step embed-
+ding embt, producing embfinalu. We encode embt using Sinusoidal positional
+embedding [3]. Similarly, the entire item node embeddings EmbfinalI are pro-
+duced. Edge embeddings Embe are formed via the Hadamard product between
+embfinalu and EmbfinalI and sent to the edge prediction module to predict each
+edge’s Bernoulli probability ˆe0
+i of ˆG0. The ID embedding module injects mutual
+information across diﬀerent bipartite graphs, enriching edge embeddings.
+In inference, we rebuild G0 from a corrupted graph GT , as the denoising
+model has already learnt the personalised information. At time step t = 0, each
+edge’s Bernoulli probability ˆe0
+i is processed by a softmax function so that the
+probability of being 0 (no edge) and 1 (exists an edge) sums to 1, and each
+user-item pair’s score is calculated as follows:
+scorei = ˆe0
+i1 −ˆe0
+i0.
+(7)
+
+--- PAGE 5 ---
+250
+Z. Ju et al.
+The scores are ranked and used to produce personalised recommendations. The
+user-item bipartite sub-graph G0 is reconstructed by eliminating the edges with
+a high probability of being 0 from ˆG0.
+3
+Experiments Setup
+Table 1. Overall performance comparison. Best results in bold, second-best underlined.
+%Improve. indicates DiﬀGR’s improvement over the top baseline.
+Method
+ML-1M
+Pinterest
+Yelp2018
+R@20
+N@20
+R@20
+N@20
+R@20
+N@20
+BPR
+0.1793 0.2624 0.1053 0.0710 0.0585 0.0485
+LightGCN 0.1731 0.3030 0.1301 0.0892 0.0751 0.0645
+MultiVAE 0.2312 0.3177 0.1261 0.0850 0.0789 0.0664
+CODIGEM 0.2221 0.3211 0.1291 0.0898 0.0552 0.0476
+DiﬀRec
+0.2280 0.3287 0.1318 0.0915 0.0787 0.0697
+L-DiﬀRec
+0.2247 0.3111 0.1384 0.0930 0.0802 0.0667
+DiﬀGR
+0.2397 0.3413 0.1445 0.0989 0.0844 0.0730
+%Improve. 3.68% 3.83% 4.41% 6.34% 5.24% 4.73%
+We conduct experiments on three widely used datasets: 1) ML-1M1 (movie
+ratings with 22.4M edges), 2) Pinterest [6] (user-pinned images with 0.53B
+edges), and 3) Yelp2018 [22] (restaurant reviews with 1.2B edges). User inter-
+actions are randomly split into 70% train, 10% validation, and 20% test sets. To
+preserve real user behavior, we use minimal pre-processing [5,17], excluding only
+users with fewer than ﬁve interactions for suﬃcient training data and accurate
+graph reconstruction in reverse diﬀusion.
+We compare DiﬀGR with six competitive and well-known baselines, cover-
+ing: pairwise learning to rank BPR [16], light graph convolution LightGCN
+[7], generative VAE Mult-VAE [13] and continuous denoising diﬀusion-based
+recommenders CODIGEM [19], DiﬀRec [21], and L-DiﬀRec [21].
+Parameters for all approaches are tuned following [21], except for L-DiﬀRec.
+For L-DiﬀRec, we set item clusters to 1, use default VAE settings, and tune other
+parameters the same as DiﬀRec. For DiﬀGR, we tune the cosine noise scheduler
+oﬀset s from {0.8, 0.08, 0.008} and select dropout ratio in {0.1, 0.3, 0.5}. Diﬀusion
+steps are set to T = 5, and embedding mergers and encoder structures are ﬁxed
+for eﬃciency. All models are trained with learning rates from {1e−2, 1e−3, 1e−4}.
+1 https://grouplens.org/datasets/movielens/1m/.
+
+--- PAGE 6 ---
+DiﬀGR: A Discrete Diﬀusion-Based Model for Personalised Recommendation
+251
+Table 2. Statistics of generated graphs.
+Dataset User
+Item
+ρ ↑
+PLE ↓ρ ↑
+PLE ↓
+Ml-1M
+0.9868 0.0120 0.9949 0.0429
+Pinterest 0.6711 0.2350 0.9788 0.1910
+Yelp2018 0.8569 0.0161 0.8884 0.0504
+The recommendation performance is evaluated using Recall@K (R@K) and
+NDCG@K (N@K) [10], where K is set to 20. The Spearman Rank-order Cor-
+relation (ρ) [26] assesses the node positions between synthesized and original
+graphs. The Power-Law Exponent (PLE) [1] evaluates the distribution distance
+between them.
+4
+Experiment Results
+Table 1 reports each algorithm’s recommendation performance by dataset. Dif-
+fGR outperforms both generative and non-generative models across all datasets,
+demonstrating that it beneﬁts from modelling the complex structural of user-
+item graphs through the diﬀusion process in discrete space. It shows stronger
+gains on sparser datasets (e.g., Pinterest (sparsity: 99.73%) and Yelp2018
+(99.98%) compared to ML-1M (95.53%)), where traditional and continuous diﬀu-
+sion models may struggle with complex, implicit user preference. DiﬀGR handles
+sparse graphs at each time step and is naturally more capable of learning from
+extremely sparse datasets, demonstrating the advantages of discrete diﬀusion
+models in RSs over other models.
+To further analyse the synthetic graph generated by DiﬀGR, we compare its
+hub-like structure and power-law distribution to the original graph using (ρ) [26]
+and (PLE) [1], respectively. The original and generated user and item nodes are
+ranked by edge count in both graphs, with ρ measuring the correlation between
+these rankings. As shown in Table 2, ρ values for users and items are close to
+1 (mostly > 0.9), indicating that nodes with higher edge counts in the original
+graph retain them in the generated graph. This preserves node positioning sim-
+ilarity, with hub-center nodes remaining central. The PLE indicates how node
+degree frequencies in the synthetic graph follow the original graph’s power-law
+distribution. Table 2 shows low PLE values (around 0.05, except for Pinterest),
+suggesting that the generated graph closely preserves this distribution. Figure 2
+shows the distribution of embeddings learned by LightGCN of original and gen-
+erated users. Both distributions are similar, with only minor angular shifts due
+to diﬀusion process uncertainty.
+
+--- PAGE 7 ---
+252
+Z. Ju et al.
+Fig. 2. The visualization of user embedding distributions on Yelp2018, following the
+approach of [25]. Clusters are represented by areas in darker colours. Distribution shifts
+are shown by the density of angles.
+5
+Conclusion and Future Work
+In this paper, we present DiﬀGR, the ﬁrst discrete diﬀusion-based generative
+RS. DiﬀGR focuses on modelling the crucial structural relationships between
+users and items in a discrete space by diﬀusing user-item graphs. Moreover, it
+avoids the need for loading entire adjacency matrices by directly manipulating
+each user’s interaction graphs and we show the generated graphs match the
+properties of the original. The experimental results show that DiﬀGR achieves
+state of the art performance. We expect DiﬀGR’s ability to generate synthetic
+graphs will stimulate interesting new directions in generative modelling for RSs.
+Acknowledgments. This work has been supported and funded by the EU Horizon
+Europe SEDIMARK (SEcure Decentralised Intelligent Data MARKetplace) project
+(Grant no. 101070074) and by the Science Foundation Ireland through the Insight
+Centre for Data Analytics under grant number SFI/12/RC/2289_P2.
+References
+1. Alstott, J., Bullmore, E., Plenz, D.: powerlaw: A python package for analysis
+of heavy-tailed distributions. PLoS ONE 9(1), e85777 (2014). https://doi.org/10.
+1371/journal.pone.0085777, http://dx.doi.org/10.1371/journal.pone.0085777
+2. Chen, X., He, J., Han, X., Liu, L.: Eﬃcient and degree-guided graph generation
+via discrete diﬀusion modeling. In: International Conference on Machine Learning,
+pp. 4585–4610. PMLR (2023)
+
+--- PAGE 8 ---
+DiﬀGR: A Discrete Diﬀusion-Based Model for Personalised Recommendation
+253
+3. Devlin, J., Chang, M.W., Lee, K., Toutanova, K.: Bert: Pre-training of deep bidi-
+rectional transformers for language understanding (2019). https://arxiv.org/abs/
+1810.04805
+4. Fan, W., Ma, Y., Li, Q., He, Y., Zhao, E., Tang, J., Yin, D.: Graph neural networks
+for social recommendation. In: The World Wide Web Conference, pp. 417–426
+(2019)
+5. Ferrari Dacrema, M., Cremonesi, P., Jannach, D.: Are we really making much
+progress? a worrying analysis of recent neural recommendation approaches. In:
+Proceedings of the 13th ACM Conference on Recommender Systems, pp. 101–109
+(2019)
+6. Geng, X., Zhang, H., Bian, J., Chua, T.S.: Learning image and user features for
+recommendation in social networks. In: Proceedings of the IEEE international
+conference on computer vision. pp. 4274–4282 (2015)
+7. He, X., Deng, K., Wang, X., Li, Y., Zhang, Y., Wang, M.: Lightgcn: Simplifying
+and powering graph convolution network for recommendation. In: Proceedings of
+the 43rd International ACM SIGIR conference on research and development in
+Information Retrieval, pp. 639–648 (2020)
+8. Ho, J., Jain, A., Abbeel, P.: Denoising diﬀusion probabilistic models (2020)
+9. Hoogeboom, E., Nielsen, D., Jaini, P., Forré, P., Welling, M.: Argmax ﬂows and
+multinomial diﬀusion: Learning categorical distributions. Adv. Neural. Inf. Process.
+Syst. 34, 12454–12465 (2021)
+10. Järvelin, K., Kekäläinen, J.: Ir evaluation methods for retrieving highly relevant
+documents. In: ACM SIGIR Forum, vol. 51, pp. 243–250. ACM, New York (2017)
+11. Jiang, Y., Yang, Y., Xia, L., Huang, C.: Diﬀkg: knowledge graph diﬀusion model
+for recommendation. In: Proceedings of the 17th ACM International Conference
+on Web Search and Data Mining, pp. 313–321 (2024)
+12. Li, Z., Sun, A., Li, C.: Diﬀurec: a diﬀusion model for sequential recommendation.
+ACM Trans. Inf. Syst. 42(3), 1–28 (2023)
+13. Liang, D., Krishnan, R.G., Hoﬀman, M.D., Jebara, T.: Variational autoencoders
+for collaborative ﬁltering. In: Proceedings of the 2018 World Wide Web Conference,
+pp. 689–698 (2018)
+14. Nichol, A.Q., Dhariwal, P.: Improved denoising diﬀusion probabilistic models. In:
+International Conference on Machine Learning, pp. 8162–8171. PMLR (2021)
+15. Niu, C., Song, Y., Song, J., Zhao, S., Grover, A., Ermon, S.: Permutation invariant
+graph generation via score-based generative modeling. In: International Conference
+on Artiﬁcial Intelligence and Statistics, pp. 4474–4484. PMLR (2020)
+16. Rendle, S., Freudenthaler, C., Gantner, Z., Schmidt-Thieme, L.: Bpr: bayesian
+personalized ranking from implicit feedback. In: Proceedings of the Twenty-Fifth
+Conference on Uncertainty in Artiﬁcial Intelligence, pp. 452–461. UAI ’09. AUAI
+Press, Arlington (2009)
+17. Sachdeva, N., McAuley, J.: How useful are reviews for recommendation? a critical
+review and potential improvements. In: Proceedings of the 43rd International ACM
+SIGIR Conference on Research and Development in Information Retrieval, pp.
+1845–1848 (2020)
+18. Vignac, C., Krawczuk, I., Siraudin, A., Wang, B., Cevher, V., Frossard, P.: Digress:
+discrete denoising diﬀusion for graph generation. arXiv preprint arXiv:2209.14734
+(2022)
+19. Walker, J., Zhong, T., Zhang, F., Gao, Q., Zhou, F.: Recommendation via col-
+laborative diﬀusion generative model. In: International Conference on Knowledge
+Science, Engineering and Management, pp. 593–605. Springer (2022)
+
+--- PAGE 9 ---
+254
+Z. Ju et al.
+20. Wang, J., Yu, L., Zhang, W., Gong, Y., Xu, Y., Wang, B., Zhang, P., Zhang,
+D.: Irgan: a minimax game for unifying generative and discriminative information
+retrieval models. In: Proceedings of the 40th International ACM SIGIR Conference
+on Research and Development in Information Retrieval, pp. 515–524 (2017)
+21. Wang, W., Xu, Y., Feng, F., Lin, X., He, X., Chua, T.S.: Diﬀusion recommender
+model. In: Proceedings of the 46th International ACM SIGIR Conference on
+Research and Development in Information Retrieval, pp. 832–841 (2023)
+22. Wang, X., He, X., Wang, M., Feng, F., Chua, T.S.: Neural graph collaborative
+ﬁltering. In: Proceedings of the 42nd International ACM SIGIR Conference on
+Research and Development in Information Retrieval. SIGIR ’19. ACM, July 2019.
+https://doi.org/10.1145/3331184.3331267
+23. Wu, S., Sun, F., Zhang, W., Xie, X., Cui, B.: Graph neural networks in recom-
+mender systems: a survey. ACM Comput. Surv. 55(5), 1–37 (2022)
+24. Ying, R., He, R., Chen, K., Eksombatchai, P., Hamilton, W.L., Leskovec, J.: Graph
+convolutional neural networks for web-scale recommender systems. In: Proceedings
+of the 24th ACM SIGKDD International Conference on Knowledge Discovery &
+Data Mining, pp. 974–983 (2018)
+25. Yu, J., Yin, H., Xia, X., Chen, T., Cui, L., Nguyen, Q.V.H.: Are graph augmenta-
+tions necessary? simple graph contrastive learning for recommendation (2022)
+26. Zar, J.H.: Spearman rank correlation. Encyclopedia of biostatistics 7 (2005)
