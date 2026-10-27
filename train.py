@@ -8,7 +8,10 @@ Replicates experimental setup from Section 3 of the paper:
 - Metrics: Recall@20 and NDCG@20
 """
 
+import sys
 import os
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 import argparse
 import random
 import time

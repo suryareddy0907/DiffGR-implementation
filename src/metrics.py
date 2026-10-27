@@ -5,8 +5,6 @@ Evaluation metrics for DiffGR replication:
    - Spearman Rank-order Correlation (rho) for User and Item degree ranking
    - Power-Law Exponent (PLE) difference
 """
-
-import math
 import numpy as np
 import scipy.stats as stats
 import torch
